@@ -1,0 +1,61 @@
+name: CI/CD Pipeline
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+
+    env:
+      MYSQL_USER: ${{ secrets.DOCUHUB_DB_USER }}
+      MYSQL_PASSWORD: ${{ secrets.DOCUHUB_DB_PASS }}
+      MYSQL_DB: docuHub_k8s_documents_service
+      MYSQL_HOSTNAME: ${{ secrets.DOCUHUB_DB_HOST }}
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v3
+
+    - name: Set up Node.js
+      uses: actions/setup-node@v3
+      with:
+        node-version: '18'
+
+    - name: Install dependencies
+      run: npm install
+
+    - name: Set Dynamic Env Vars
+      run: |
+        echo "DATABASE_URL=mysql://$MYSQL_USER:$MYSQL_PASSWORD@$MYSQL_HOSTNAME/$MYSQL_DB" >> $GITHUB_ENV
+
+    - name: Create .env file
+      run: |
+        echo "DATABASE_URL=${{ env.DATABASE_URL }}" > .env
+
+    - name: Run Node.js app for testing
+      run: node index.js & sleep 5 && curl http://localhost:3000
+
+    - name: Copy files to EC2 via SSH
+      uses: appleboy/scp-action@v0.1.4
+      with:
+        host: ${{ secrets.EC2_HOST }}
+        username: ec2-user
+        key: ${{ secrets.EC2_SSH_KEY }}
+        source: "."
+        target: "/home/ec2-user/docuhub-service"
+
+    - name: SSH and restart service
+      uses: appleboy/ssh-action@v1.0.0
+      with:
+        host: ${{ secrets.EC2_HOST }}
+        username: ec2-user
+        key: ${{ secrets.EC2_SSH_KEY }}
+        script: |
+          cd /home/ec2-user/docuhub-service
+          echo "DATABASE_URL=${{ env.DATABASE_URL }}" > .env
+          npm install
+          pkill node || true
+          nohup node index.js > out.log 2>&1 &
