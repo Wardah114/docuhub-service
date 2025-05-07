@@ -1,4 +1,4 @@
-name: CI/CD Pipeline
+name: Build and Deploy
 
 on:
   push:
@@ -8,12 +8,6 @@ on:
 jobs:
   build-and-deploy:
     runs-on: ubuntu-latest
-
-    env:
-      MYSQL_USER: ${{ secrets.DOCUHUB_DB_USER }}
-      MYSQL_PASSWORD: ${{ secrets.DOCUHUB_DB_PASS }}
-      MYSQL_DB: docuHub_k8s_documents_service
-      MYSQL_HOSTNAME: ${{ secrets.DOCUHUB_DB_HOST }}
 
     steps:
     - name: Checkout code
@@ -27,35 +21,25 @@ jobs:
     - name: Install dependencies
       run: npm install
 
-    - name: Set Dynamic Env Vars
-      run: |
-        echo "DATABASE_URL=mysql://$MYSQL_USER:$MYSQL_PASSWORD@$MYSQL_HOSTNAME/$MYSQL_DB" >> $GITHUB_ENV
+    - name: Build project
+      run: npm run build
 
-    - name: Create .env file
-      run: |
-        echo "DATABASE_URL=${{ env.DATABASE_URL }}" > .env
-
-    - name: Run Node.js app for testing
-      run: node index.js & sleep 5 && curl http://localhost:3000
-
-    - name: Copy files to EC2 via SSH
+    - name: Copy files to server via SCP
       uses: appleboy/scp-action@v0.1.4
       with:
-        host: ${{ secrets.EC2_HOST }}
-        username: ec2-user
-        key: ${{ secrets.EC2_SSH_KEY }}
-        source: "."
-        target: "/home/ec2-user/docuhub-service"
+        host: ${{ secrets.SERVER_HOST }}
+        username: ${{ secrets.SERVER_USER }}
+        password: ${{ secrets.SERVER_PASSWORD }}
+        port: 22
+        source: "dist/*"
+        target: "/var/www/your-app-directory"
 
-    - name: SSH and restart service
+    - name: Restart service via SSH
       uses: appleboy/ssh-action@v1.0.0
       with:
-        host: ${{ secrets.EC2_HOST }}
-        username: ec2-user
-        key: ${{ secrets.EC2_SSH_KEY }}
+        host: ${{ secrets.SERVER_HOST }}
+        username: ${{ secrets.SERVER_USER }}
+        password: ${{ secrets.SERVER_PASSWORD }}
+        port: 22
         script: |
-          cd /home/ec2-user/docuhub-service
-          echo "DATABASE_URL=${{ env.DATABASE_URL }}" > .env
-          npm install
-          pkill node || true
-          nohup node index.js > out.log 2>&1 &
+          sudo systemctl restart nginx
