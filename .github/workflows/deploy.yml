@@ -27,9 +27,9 @@ jobs:
     - name: Install dependencies
       run: npm install
 
-    - name: Set Dynamic Env Vars
+    - name: Set DATABASE_URL
       run: |
-        echo "DATABASE_URL=mysql://$MYSQL_USER:$MYSQL_PASSWORD@$MYSQL_HOSTNAME/$MYSQL_DB" >> $GITHUB_ENV
+        echo "DATABASE_URL=mysql://${{ env.MYSQL_USER }}:${{ env.MYSQL_PASSWORD }}@${{ env.MYSQL_HOSTNAME }}/${{ env.MYSQL_DB }}" >> $GITHUB_ENV
 
     - name: Create .env file
       run: |
@@ -46,6 +46,7 @@ jobs:
         key: ${{ secrets.EC2_SSH_KEY }}
         source: "."
         target: "/home/ec2-user/docuhub-service"
+        rm: true
 
     - name: SSH and restart service
       uses: appleboy/ssh-action@v1.0.0
@@ -53,9 +54,10 @@ jobs:
         host: ${{ secrets.EC2_HOST }}
         username: ec2-user
         key: ${{ secrets.EC2_SSH_KEY }}
+        envs: DATABASE_URL
         script: |
           cd /home/ec2-user/docuhub-service
-          echo "DATABASE_URL=${{ env.DATABASE_URL }}" > .env
+          echo "DATABASE_URL=${DATABASE_URL}" > .env
           npm install
           pkill node || true
           nohup node index.js > out.log 2>&1 &
